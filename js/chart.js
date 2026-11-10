@@ -67,7 +67,7 @@ window.Porquinhos = window.Porquinhos || {};
     if (todos.length < 2) {
       ctx.textAlign = 'center';
       ctx.fillText(
-        'Registre pelo menos 2 pesagens (ou use "Dados Demo") para ver a curva de crescimento',
+        'Registre pelo menos 2 pesagens para ver a curva de crescimento',
         w / 2,
         h / 2
       );
