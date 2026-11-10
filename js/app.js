@@ -258,7 +258,10 @@ window.Porquinhos = window.Porquinhos || {};
         inp.select();
         const ok = () => {
           const n = inp.value.trim();
-          if (n) p.nome = n;
+          if (n && n !== p.nome) {
+            p.nome = n;
+            ns.apiRenomearPorquinho(i, n, dados);
+          }
           render();
         };
         inp.onblur = ok;
@@ -304,23 +307,26 @@ window.Porquinhos = window.Porquinhos || {};
       return aviso('Preencha uma data válida e o peso em gramas (ex: 750)');
     }
 
+    const registro = { data, g, ...(nota ? { nota } : {}) };
     const existenteIdx = dados[i].pesos.findIndex((r) => r.data === data);
+
     if (existenteIdx >= 0) {
       const anterior = { ...dados[i].pesos[existenteIdx] };
-      dados[i].pesos[existenteIdx] = { data, g, ...(nota ? { nota } : {}) };
+      dados[i].pesos[existenteIdx] = registro;
+      ns.apiSalvarPesagem(i, registro, dados);
       render();
       ns.pular3D(i);
       desfazerAcao = () => {
         dados[i].pesos[existenteIdx] = anterior;
+        ns.apiSalvarPesagem(i, anterior, dados);
         render();
       };
       aviso(`Peso de ${ns.formatarDataBR(data)} atualizado para ${g} g`, true);
       return;
     }
 
-    const novo = { data, g };
-    if (nota) novo.nota = nota;
-    dados[i].pesos.push(novo);
+    dados[i].pesos.push(registro);
+    ns.apiSalvarPesagem(i, registro, dados);
     render();
     ns.pular3D(i);
     aviso(`Pesagem de ${g} g registrada para ${dados[i].nome}!`);
@@ -347,9 +353,11 @@ window.Porquinhos = window.Porquinhos || {};
   function removerPesagem(i, j) {
     const r = dados[i].pesos.splice(j, 1)[0];
     if (!r) return;
+    ns.apiDeletarPesagem(i, r.data, dados);
     render();
     desfazerAcao = () => {
       dados[i].pesos.push(r);
+      ns.apiSalvarPesagem(i, r, dados);
       render();
     };
     aviso(`Pesagem de ${r.g} g apagada`, true);
@@ -429,12 +437,14 @@ window.Porquinhos = window.Porquinhos || {};
           if (!Array.isArray(importado)) throw new Error('Formato inválido');
           const backupAnterior = JSON.parse(JSON.stringify(dados));
           dados = importado;
+          ns.salvarTodosNoServidor(dados);
           render();
           desfazerAcao = () => {
             dados = backupAnterior;
+            ns.salvarTodosNoServidor(dados);
             render();
           };
-          aviso('Backup importado com sucesso!', true);
+          aviso('Backup importado e salvo no banco de dados!', true);
         } catch (err) {
           aviso('Arquivo JSON inválido. Verifique o arquivo selecionado.');
         }
@@ -445,15 +455,17 @@ window.Porquinhos = window.Porquinhos || {};
     $('#btn-demo')?.addEventListener('click', () => {
       const backupAnterior = JSON.parse(JSON.stringify(dados));
       dados = ns.gerarDadosExemplo(dados);
+      ns.salvarTodosNoServidor(dados);
       render();
       ns.pular3D(0);
       setTimeout(() => ns.pular3D(1), 150);
       setTimeout(() => ns.pular3D(2), 300);
       desfazerAcao = () => {
         dados = backupAnterior;
+        ns.salvarTodosNoServidor(dados);
         render();
       };
-      aviso('Dados de demonstração carregados!', true);
+      aviso('Dados de demonstração carregados no banco!', true);
     });
   }
 
@@ -461,6 +473,12 @@ window.Porquinhos = window.Porquinhos || {};
   atualizarBotaoSom();
   configurarToolbar();
   render();
+
+  // Conecta ao banco de dados SQLite do servidor assim que carrega
+  ns.sincronizarComServidor(dados, (dadosDoBanco) => {
+    dados = dadosDoBanco;
+    render();
+  });
 
   ns.iniciarCena3D(
     () => dados,

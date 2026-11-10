@@ -1,17 +1,32 @@
 // ============================================================================
-// CAMADA DE DADOS, ESTATÍSTICAS E PERSISTÊNCIA (compatível com index_1.html)
+// CAMADA DE DADOS, API SQLITE, ESTATÍSTICAS E PERSISTÊNCIA
 // ============================================================================
 window.Porquinhos = window.Porquinhos || {};
 
 (function (ns) {
-  function carregarDados() {
-    let dados = null;
-    try {
-      dados = JSON.parse(localStorage.getItem(ns.STORAGE_KEY));
-    } catch (e) {}
+  let bdOnline = false;
 
+  function isBdOnline() {
+    return bdOnline;
+  }
+
+  function atualizarBadgeBD(online) {
+    bdOnline = online;
+    const el = document.getElementById('status-bd');
+    if (!el) return;
+    if (online) {
+      el.textContent = '🗄️ BD SQLite Online';
+      el.className = 'bd-badge online';
+      el.title = 'Dados sincronizados no banco de dados SQLite do servidor';
+    } else {
+      el.textContent = '💾 Modo Local';
+      el.className = 'bd-badge offline';
+      el.title = 'Sem conexão com a API; salvando apenas no navegador (localStorage)';
+    }
+  }
+
+  function normalizarDados(dados) {
     if (!Array.isArray(dados)) dados = [];
-
     for (let i = 0; i < ns.TIPOS.length; i++) {
       if (!dados[i] || typeof dados[i] !== 'object') {
         dados[i] = { nome: ns.TIPOS[i].nomePadrao, pesos: [] };
@@ -24,11 +39,111 @@ window.Porquinhos = window.Porquinhos || {};
     return dados;
   }
 
-  function salvarDados(dados) {
+  function carregarDadosLocais() {
+    let dados = null;
+    try {
+      dados = JSON.parse(localStorage.getItem(ns.STORAGE_KEY));
+    } catch (e) {}
+    return normalizarDados(dados);
+  }
+
+  function salvarDadosLocais(dados) {
     ordenarPesos(dados);
     try {
       localStorage.setItem(ns.STORAGE_KEY, JSON.stringify(dados));
     } catch (e) {}
+  }
+
+  /**
+   * Sincroniza inicialização com o banco SQLite via API (/api/dados).
+   * Se o banco estiver vazio no servidor mas houver dados no localStorage,
+   * migra automaticamente os dados locais para o banco!
+   */
+  async function sincronizarComServidor(dadosAtuais, aoAtualizar) {
+    if (window.location.protocol === 'file:') {
+      atualizarBadgeBD(false);
+      return;
+    }
+    try {
+      const resp = await fetch('/api/dados', { cache: 'no-store' });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const dadosRemotos = normalizarDados(await resp.json());
+      atualizarBadgeBD(true);
+
+      const totalRemoto = dadosRemotos.reduce((acc, p) => acc + p.pesos.length, 0);
+      const totalLocal = dadosAtuais.reduce((acc, p) => acc + p.pesos.length, 0);
+      const nomesLocaisAlterados = dadosAtuais.some(
+        (p, i) => p.nome && p.nome !== ns.TIPOS[i].nomePadrao
+      );
+
+      // Se o banco SQLite acabou de ser criado (vazio) e o navegador já tinha dados locais, envia para o banco
+      if (totalRemoto === 0 && (totalLocal > 0 || nomesLocaisAlterados)) {
+        await salvarTodosNoServidor(dadosAtuais);
+      } else {
+        salvarDadosLocais(dadosRemotos);
+        aoAtualizar(dadosRemotos);
+      }
+    } catch (e) {
+      atualizarBadgeBD(false);
+    }
+  }
+
+  async function salvarTodosNoServidor(dados) {
+    salvarDadosLocais(dados);
+    if (window.location.protocol === 'file:') return;
+    try {
+      const resp = await fetch('/api/dados', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dados),
+      });
+      atualizarBadgeBD(resp.ok);
+    } catch (e) {
+      atualizarBadgeBD(false);
+    }
+  }
+
+  async function apiRenomearPorquinho(id, nome, dadosFallback) {
+    salvarDadosLocais(dadosFallback);
+    if (window.location.protocol === 'file:') return;
+    try {
+      const resp = await fetch(`/api/porquinhos/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nome }),
+      });
+      atualizarBadgeBD(resp.ok);
+    } catch (e) {
+      atualizarBadgeBD(false);
+    }
+  }
+
+  async function apiSalvarPesagem(id, registro, dadosFallback) {
+    salvarDadosLocais(dadosFallback);
+    if (window.location.protocol === 'file:') return;
+    try {
+      const resp = await fetch(`/api/porquinhos/${id}/pesos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(registro),
+      });
+      atualizarBadgeBD(resp.ok);
+    } catch (e) {
+      atualizarBadgeBD(false);
+    }
+  }
+
+  async function apiDeletarPesagem(id, data, dadosFallback) {
+    salvarDadosLocais(dadosFallback);
+    if (window.location.protocol === 'file:') return;
+    try {
+      const resp = await fetch(`/api/porquinhos/${id}/pesos/${encodeURIComponent(data)}`, {
+        method: 'DELETE',
+      });
+      atualizarBadgeBD(resp.ok);
+    } catch (e) {
+      atualizarBadgeBD(false);
+    }
   }
 
   function ordenarPesos(dados) {
@@ -161,8 +276,14 @@ window.Porquinhos = window.Porquinhos || {};
   }
 
   Object.assign(ns, {
-    carregarDados,
-    salvarDados,
+    isBdOnline,
+    carregarDados: carregarDadosLocais,
+    salvarDados: salvarDadosLocais,
+    sincronizarComServidor,
+    salvarTodosNoServidor,
+    apiRenomearPorquinho,
+    apiSalvarPesagem,
+    apiDeletarPesagem,
     ordenarPesos,
     dataHojeISO,
     formatarDataBR,

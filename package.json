@@ -1,0 +1,14 @@
+{
+  "name": "porquinhos",
+  "version": "1.0.0",
+  "description": "Aplicacao web 3D (Three.js) e 2D com banco SQLite para acompanhamento de peso e crescimento de porquinhos-da-india",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "license": "MIT"
+}

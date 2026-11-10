@@ -69,6 +69,33 @@ h1 {
   gap: 8px;
 }
 
+.titulo-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.bd-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
+.bd-badge.online {
+  background: var(--success-bg);
+  color: var(--success);
+  border-color: var(--success);
+}
+
+.bd-badge.offline {
+  background: var(--warning-bg);
+  color: var(--warning);
+  border-color: var(--warning);
+}
+
 .toolbar {
   display: flex;
   flex-wrap: wrap;
